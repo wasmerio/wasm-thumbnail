@@ -3,6 +3,9 @@ name = "wasm-thumbnail"
 version = "0.1.0"
 authors = ["eV <ev@7pr.xyz>"]
 edition = "2018"
+description = "A tiny library for creating padded image thumbnails intended for use inside webassembly sandboxes."
+license = "MPL-2.0"
+readme = "../README.md"
 
 [lib]
 crate-type = ["rlib", "cdylib"]
@@ -10,3 +13,9 @@ crate-type = ["rlib", "cdylib"]
 [dependencies]
 image = { version = "0.23.10", default_features = false, features = ["gif", "jpeg", "png", "webp"] }
 wit-bindgen-rust = { git = "https://github.com/wasmerio/wit-bindgen", branch = "wasmer", version = "0.1.0" }
+
+[package.metadata.wapm]
+# TODO: replace this with "brave-intl"
+namespace = "Michael-F-Bryan"
+abi = "none"
+bindings = { wit-exports = "wasm-thumbnail.wit", wit-bindgen = "0.1.0" }
