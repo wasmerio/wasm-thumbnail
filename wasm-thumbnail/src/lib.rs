@@ -1,91 +1,44 @@
-use std::error::Error;
-use std::mem;
-use std::os::raw::c_void;
+use image::{
+    self, imageops::FilterType, DynamicImage, GenericImage, GenericImageView, ImageOutputFormat,
+};
 
-use image;
-use image::imageops::FilterType;
-use image::DynamicImage;
-use image::GenericImage;
-use image::GenericImageView;
-use image::ImageOutputFormat;
+use crate::wasm_thumbnail::Error;
 
-#[cfg(not(feature = "wasm-bindgen"))]
-mod hook;
-#[cfg(not(feature = "wasm-bindgen"))]
-use hook::register_panic_hook;
+wit_bindgen_rust::export!("wasm-thumbnail.wit");
 
-/// Resize the input image specified by pointer and length to nwidth by nheight,
-/// returns a pointer to nsize bytes that containing a u32 length followed
-/// by the thumbnail bytes and padding
-#[no_mangle]
-#[cfg(not(feature = "wasm-bindgen"))]
-pub extern "C" fn resize_and_pad(
-    pointer: *mut u8,
-    length: usize,
-    nwidth: u32,
-    nheight: u32,
-    nsize: usize,
-    nquality: u8,
-) -> *const u8 {
-    register_panic_hook();
+struct WasmThumbnail;
 
-    let slice: &[u8] = unsafe { std::slice::from_raw_parts(pointer, length) };
+impl wasm_thumbnail::WasmThumbnail for WasmThumbnail {
+    fn resize_and_pad(
+        image: Vec<u8>,
+        width: u32,
+        height: u32,
+        quality: u8,
+    ) -> Result<Vec<u8>, Error> {
+        let img = image::load_from_memory(&image)?;
 
-    let mut out: Vec<u8> = Vec::with_capacity(nsize);
-    // Reserve space at the start for length header
-    out.extend_from_slice(&[0, 0, 0, 0]);
+        // Resize preserves aspect ratio
+        let img = img.resize(width, height, FilterType::Lanczos3);
 
-    if let Ok(thumbnail_len) = _resize_and_pad(slice, &mut out, nwidth, nheight, nsize, nquality) {
-        out.splice(..4, thumbnail_len.to_be_bytes().iter().cloned());
+        // Copy pixels only
+        let mut result = DynamicImage::new_rgba8(img.width(), img.height());
+        result.copy_from(&img, 0, 0)?;
+
+        let mut out = Vec::new();
+        result.write_to(&mut out, ImageOutputFormat::Jpeg(quality))?;
+
+        Ok(out)
     }
-
-    out.resize(nsize, 0);
-
-    let pointer = out.as_mut_ptr();
-    mem::forget(out);
-    pointer
 }
 
-pub fn _resize_and_pad(
-    slice: &[u8],
-    out: &mut Vec<u8>,
-    nwidth: u32,
-    nheight: u32,
-    nsize: usize,
-    nquality: u8,
-) -> Result<u32, Box<dyn Error>> {
-    let img = image::load_from_memory(slice)?;
+impl<E: std::error::Error> From<E> for Error {
+    fn from(e: E) -> Self {
+        let message = e.to_string();
 
-    // Resize preserves aspect ratio
-    let img = img.resize(nwidth, nheight, FilterType::Lanczos3);
+        let causes = std::iter::successors(e.source(), |e| e.source())
+            .map(|e| e.to_string())
+            .collect();
 
-    // Copy pixels only
-    let mut result = DynamicImage::new_rgba8(img.width(), img.height());
-    result.copy_from(&img, 0, 0)?;
-
-    result.write_to(out, ImageOutputFormat::Jpeg(nquality))?;
-
-    if out.len() > nsize {
-        return Err("size is too large".into());
-    }
-
-    Ok(out.len() as u32 - 4)
-}
-
-/// Allocate a new buffer in the wasm memory space
-#[no_mangle]
-pub extern "C" fn allocate(capacity: usize) -> *mut c_void {
-    let mut buffer = Vec::with_capacity(capacity);
-    let pointer = buffer.as_mut_ptr();
-    mem::forget(buffer);
-
-    pointer as *mut c_void
-}
-
-/// Deallocate a buffer in the wasm memory space
-#[no_mangle]
-pub extern "C" fn deallocate(pointer: *mut c_void, capacity: usize) {
-    unsafe {
-        let _ = Vec::from_raw_parts(pointer, 0, capacity);
+        Error { message, causes }
     }
 }

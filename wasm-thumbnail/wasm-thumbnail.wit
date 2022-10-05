@@ -1,0 +1,10 @@
+
+/// Resize the input image so it has the requested width and height.
+resize-and-pad: func(image: list<u8>, width: u32, height: u32, quality: u8) -> expected<list<u8>, error>
+
+record error {
+    /// The top-level error message.
+    message: string,
+    /// The chain of errors that led to this error.
+    causes: list<string>,
+}
